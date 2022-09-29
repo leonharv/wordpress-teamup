@@ -74,9 +74,8 @@ class Teamup {
 		$this->plugin_name = 'teamup';
 
 		$this->load_dependencies();
-		// $this->set_locale();
+		$this->check_database();
 		$this->define_admin_hooks();
-		// $this->define_public_hooks();
         $this->define_shortcode_hooks();
 	}
 
@@ -104,11 +103,7 @@ class Teamup {
 		 */
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-teamup-loader.php';
 
-		/**
-		 * The class responsible for defining internationalization functionality
-		 * of the plugin.
-		 */
-		// require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-plugin-name-i18n.php';
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-teamup-database.php';
 
 		/**
 		 * The class responsible for defining all actions that occur in the admin area.
@@ -128,21 +123,16 @@ class Teamup {
 	}
 
 	/**
-	 * Define the locale for this plugin for internationalization.
-	 *
-	 * Uses the Plugin_Name_i18n class in order to set the domain and to register the hook
-	 * with WordPress.
-	 *
-	 * @since    1.0.0
-	 * @access   private
+	 * Check for a database update after an update.
+	 * 
+	 * @since 1.0.1
+	 * @access private
 	 */
-	// private function set_locale() {
+	private function check_database() {
+		$plugin_databasse = new Teamup_Database($this->plugin_name, $this->version);
 
-	// 	$plugin_i18n = new Plugin_Name_i18n();
-
-	// 	$this->loader->add_action( 'plugins_loaded', $plugin_i18n, 'load_plugin_textdomain' );
-
-	// }
+		$this->loader->add_action('plugins_loaded', $plugin_databasse, 'check_database');
+	}
 
 	/**
 	 * Register all of the hooks related to the admin area functionality
@@ -154,27 +144,17 @@ class Teamup {
 	private function define_admin_hooks() {
 
 		$plugin_admin = new Teamup_Admin( 'teamup', $this->version );
-		add_action( 'admin_init', array($plugin_admin, 'register_fields') );
-		add_action( 'admin_menu', array($plugin_admin, 'options_page') );
+		$this->loader->add_action('admin_init', $plugin_admin, 'register_fields');
+		$this->loader->add_action('admin_menu', $plugin_admin, 'options_page');
 
 	}
 
 	/**
-	 * Register all of the hooks related to the public-facing functionality
-	 * of the plugin.
-	 *
-	 * @since    1.0.0
-	 * @access   private
+	 * Register all shortcodes for this plugin.
+	 * 
+	 * @since 1.0.0
+	 * @access private
 	 */
-	// private function define_public_hooks() {
-
-	// 	$plugin_public = new Teamup_Public( $this->get_plugin_name(), $this->get_version() );
-
-	// 	$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_styles' );
-	// 	$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_scripts' );
-
-	// }
-
     private function define_shortcode_hooks() {
 
 		$key = get_option($this->plugin_name.'_api_key', '');

@@ -28,3 +28,9 @@
 if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 	exit;
 }
+
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-teamup-database.php';
+Teamup_Database::uninstall();
+
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-teamup-shortcode.php';
+Teamup_Shortcode::uninstall();

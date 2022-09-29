@@ -53,6 +53,11 @@ class Teamup_Admin {
 
 	}
 
+	/**
+	 * Register the settings page and fields.
+	 * 
+	 * @since 1.0.0
+	 */
 	public function register_fields() {
 		add_settings_section(
 			$this->plugin_name.'_general_section',
@@ -86,10 +91,22 @@ class Teamup_Admin {
 		);
 	}
 
+	/**
+	 * Display the general settings section.
+	 * 
+	 * @since 1.0.0
+	 * @return string The description of the settings section.
+	 */
 	public function display_general() {
 		echo '';
 	}
 
+	/**
+	 * Render the HTML for a setting based on its arguments.
+	 * 
+	 * @since 1.0.0
+	 * @param array $args The properties of this setting.
+	 */
 	public function render_settings_field($args) {
 		/* EXAMPLE INPUT
 			'type'      => 'input',
@@ -136,6 +153,11 @@ class Teamup_Admin {
 		}
 	}
 
+	/**
+	 * Adds the options page to the admin menu.
+	 * 
+	 * @since 1.0.0
+	 */
 	public function options_page() {
 		add_menu_page(
 			$this->plugin_name,
@@ -148,9 +170,23 @@ class Teamup_Admin {
 		);
 	}
 
+	/**
+	 * Renders the settings page.
+	 * 
+	 * @since 1.0.0
+	 */
 	public function render_options_page() {
 		$plugin_name = $this->plugin_name;
 		require 'partials/admin-options.php';
+	}
+
+	/**
+	 * This uninstalls all persistent data.
+	 * 
+	 * @since 1.0.0
+	 */
+	public static function uninstall() {
+		delete_option('teamup_api_key');
 	}
 
 	/**
@@ -172,7 +208,7 @@ class Teamup_Admin {
 		 * class.
 		 */
 
-		// wp_enqueue_style( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'css/plugin-name-admin.css', array(), $this->version, 'all' );
+		wp_enqueue_style( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'css/plugin-name-admin.css', array(), $this->version, 'all' );
 
 	}
 
@@ -195,7 +231,7 @@ class Teamup_Admin {
 		 * class.
 		 */
 
-		// wp_enqueue_script( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'js/plugin-name-admin.js', array( 'jquery' ), $this->version, false );
+		wp_enqueue_script( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'js/plugin-name-admin.js', array( 'jquery' ), $this->version, false );
 
 	}
 

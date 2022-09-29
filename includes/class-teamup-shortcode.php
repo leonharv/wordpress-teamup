@@ -1,10 +1,10 @@
 <?php
 
 /**
- * The file that defines the core plugin class
+ * Defines the main routines for this plugin.
  *
- * A class definition that includes attributes and functions used across both the
- * public-facing side of the site and the admin area.
+ * This class initializes and renders the shortcode. It contains the 
+ * routines to call the Teamup API.
  *
  * @since      1.0.0
  *
@@ -12,14 +12,13 @@
  * @subpackage Teamup/includes
  */
 
+ require_once 'class-teamup-database.php';
+
 /**
- * The core plugin class.
+ * Defines the main routines for this plugin.
  *
- * This is used to define internationalization, admin-specific hooks, and
- * public-facing site hooks.
- *
- * Also maintains the unique identifier of this plugin as well as the current
- * version of the plugin.
+ * This class initializes and renders the shortcode. It contains the 
+ * routines to call the Teamup API.
  *
  * @since      1.0.0
  * @package    Teamup
@@ -63,26 +62,91 @@ class Teamup_Shortcode {
 
 	}
 
-    public function callback($atts, $content = null) {
-		$events = $this->get_recuring_events();
-		$calendars = $this->get_calendar();
+	/**
+	 * Filter out the age of the event's description. In addition, all 
+	 * html tags are removed.
+	 * 
+	 * @since 1.0.0
+	 * @param stdclass 	$event 	The event to filter.
+	 * @return string The filtered description.
+	 */
+	private function get_contact($event) {
+		$filtering = ['kinder', 'jugend', 'erwachsene', 'senioren'];
+		return preg_replace('/('.join('|', $filtering).')\s+/i', '', strip_tags($event->notes));
+	}
 
-		$output = '<table><thead><th>WOCHENTAG</th><th>UHRZEIT</th><th>ANGEBOT</th><th>ORT</th><th>ÜBUNGSLEITER</th></thead><tbody>';
+	/**
+	 * Identify the age from the event's description.
+	 * 
+	 * @since 1.0.0
+	 * @param stdclass	$event	The event to identify the age.
+	 * @return string The identified age name.
+	 */
+	private function get_age($event) {
+		$filtering = ['kinder', 'jugend', 'erwachsene', 'senioren'];
+		preg_match('/('.join('|', $filtering).')\s+/i', strip_tags($event->notes), $match);
+		return $match[0];
+	}
+
+	/**
+	 * This function is called to process the shortcode.
+	 * 
+	 * @since 1.0.0
+	 * @param array $atts The attributes of the shortcode call.
+	 * @param string $content The content. if existent inside the shortcode.
+	 * @return string The generated table.
+	 */
+    public function callback($atts, $content = null) {
+		$events = $this->get_calendar();
+
+		$days = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+
+		$output = '<table><thead><th>WOCHENTAG</th><th>UHRZEIT</th><th>ANGEBOT</th><th>ORT</th><th>ÜBUNGSLEITER</th><th>KONTAKT</th></thead><tbody>';
 		foreach($events as $event) {
-			$start = date_create($event->start_dt);
-			$end = date_create($event->end_dt);
-			$locations = [];
-			// var_dump($event);
-			foreach($event->subcalendar_ids as $subcalendar) {
-				$locations[] = $calendars[$subcalendar];
-			}
-			$output .= '<tr><td>'.$start->format('l').'</td><td>'.$start->format('G:i').' - '.$end->format('G:i').' Uhr</td><td>'.$event->title.'</td><td>'.join(', ', $locations).'</td><td>'.$event->who.'</td></tr>';
+			$start = date_create($event->start_time);
+			$end = date_create($event->end_time);
+			$output .= '<tr><td>'.$days[$start->format('N')-1].'</td><td>'.$start->format('G:i').' - '.$end->format('G:i').' Uhr</td><td>'.strip_tags($event->title).'</td><td>'.strip_tags($event->location).'</td><td>'.strip_tags($event->trainer).'</td><td>'.strip_tags($event->contact).'</td></tr>';
 		}
 		$output .= '</tbody></table>';
 		return $output;
     }
 
+	/**
+	 * Get all recuring events.
+	 * 
+	 * This method either gets the data of the database or fetches it from
+	 * Teamup. It identifies if the Monday of this week is the same one
+	 * stored in the database. If so, the database contains values not older
+	 * than this week. Otherwise, the database is updated from Teamup and
+	 * the Monday of this week is stored as the least valid date.
+	 * 
+	 * @since 1.0.2
+	 * @return array The list of all recurrent events.
+	 */
 	private function get_calendar() {
+		$last_fetch = get_option('teamup_last_fetch', 0);
+		$last_monday = date_create('Monday this week');
+
+		// If the Monday from this week is not the stored one, we have a new week.
+		if($last_monday != $last_fetch) {
+			$events = $this->fetch_recuring_events();
+			$calendars = $this->fetch_calendar();
+
+			$this->store_events($events, $calendars);
+
+			update_option('teamup_last_fetch', $last_monday);
+		}
+
+		return $this->query_calendar();
+	}
+
+	/**
+	 * Fetches all calendars from Teamup.
+	 * 
+	 * @since 1.0.0
+	 * @return array An associative array, which maps from id to name.
+	 */
+	private function fetch_calendar() {
 		$ch = curl_init();
 	
 		curl_setopt($ch, CURLOPT_URL, "https://api.teamup.com/kssw3hmcj3e2ab46wg/subcalendars");
@@ -101,10 +165,16 @@ class Teamup_Shortcode {
 		return $subcalendars;
 	}
 
-	private function get_recuring_events() {
+	/**
+	 * Fetches all recurrent events from Teamup.
+	 * 
+	 * @since 1.0.0
+	 * @return array All recurrent events as an stdclass.
+	 */
+	private function fetch_recuring_events() {
 		$ch = curl_init();
 	
-		curl_setopt($ch, CURLOPT_URL, "https://api.teamup.com/kssw3hmcj3e2ab46wg/events?startDate=last+Monday&endDate=next+Sunday");
+		curl_setopt($ch, CURLOPT_URL, "https://api.teamup.com/kssw3hmcj3e2ab46wg/events?startDate=Monday+this+week&endDate=Sunday+this+week");
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 		curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Teamup-Token: '.$this->api_key]);
 	
@@ -118,10 +188,61 @@ class Teamup_Shortcode {
 		foreach($events as &$event) {
 			if(strpos($event->rrule, 'FREQ=WEEKLY') !== false) {
 				$recuring_events[] = $event;
-			} else {
-				echo '<h1>'.$event->title.'</h1>';
 			}
 		}
 		return $recuring_events;
+	}
+
+	/**
+	 * Stores all events in the database.
+	 * 
+	 * @since 1.0.2
+	 * @param array $events All events to store.
+	 * @param array $calendars The associative array, which maps from id to name.
+	 */
+	private function store_events($events, $calendars) {
+		Teamup_Database::flush_table();
+
+		$rows = [];
+		foreach($events as $event) {
+			$locations = [];
+			foreach($event->subcalendar_ids as $subcalendar) {
+				$locations[] = $calendars[$subcalendar];
+			}
+
+			$contact = $this->get_contact($event);
+			$age = $this->get_age($event);
+
+			$rows[] = array(
+				'start_time' => $event->start_dt,
+				'end_time' => $event->end_dt,
+				'title' => $event->title,
+				'location' => join(', ', $locations),
+				'trainer' => $event->who,
+				'contact' => $contact,
+				'age' => $age
+			);
+		}
+
+		Teamup_Database::insert_rows($rows);
+	}
+
+	/**
+	 * Query the database for all recuring events.
+	 * 
+	 * @since 1.0.2
+	 * @return array A list of all stored events.
+	 */
+	private function query_calendar() {
+		return Teamup_Database::query_rows();
+	}
+
+	/**
+	 * Uninstall routine to delete from persistent storage.
+	 * 
+	 * @since 1.0.2
+	 */
+	public static function uninstall() {
+		delete_option('teamup_last_fetch');
 	}
 }
