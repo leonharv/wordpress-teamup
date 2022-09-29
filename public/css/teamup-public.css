@@ -1,0 +1,14 @@
+table.exercises {
+    width: 100%;
+    height: auto;
+    vertical-align: top;
+}
+
+table.exercises thead {
+    color: #a83d3d;
+    line-height: 46px;
+}
+
+table.exercises tbody {
+    line-height: 40px;
+}

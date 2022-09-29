@@ -101,7 +101,16 @@ class Teamup_Shortcode {
 
 		$days = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 
-		$output = '<table><thead><th>WOCHENTAG</th><th>UHRZEIT</th><th>ANGEBOT</th><th>ORT</th><th>ÜBUNGSLEITER</th><th>KONTAKT</th></thead><tbody>';
+		$output = '<table class="exercises">
+			<thead>
+				<th style="width: 10%;">WOCHENTAG</th>
+				<th style="width: 12%;">UHRZEIT</th>
+				<th style="width: 25%;">ANGEBOT</th>
+				<th style="width: 15%;">ORT</th>
+				<th style="width: 20%;">ÜBUNGSLEITER</th>
+				<th style="width: 16%;">KONTAKT</th>
+			</thead>
+		<tbody>';
 		foreach($events as $event) {
 			$start = date_create($event->start_time);
 			$end = date_create($event->end_time);
