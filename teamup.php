@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Teamup
  * Description:       Generate a tabular view of teamup calendars using its API.
- * Version:           1.0.0
+ * Version:           1.0.2
  * Requires at least: 5.2
  * Requires PHP:      7.2
  * Author:            Viktor Leonhardt
