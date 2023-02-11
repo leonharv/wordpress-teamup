@@ -85,10 +85,34 @@ class Teamup_Admin {
 			$args
 		);
 
+		$args = array (
+			'type'      => 'input',
+			'subtype'   => 'text',
+			'id'    => $this->plugin_name.'_calendar_id',
+			'name'      => $this->plugin_name.'_calendar_id',
+			'required' => 'true',
+			'get_options_list' => '',
+			'value_type'=>'normal',
+			'wp_data' => 'option'
+		);
+		add_settings_field(
+			$this->plugin_name.'_calendar_id',
+			'Teamup Kalender ID',
+			array($this, 'render_settings_field'),
+			$this->plugin_name.'_general_settings',
+			$this->plugin_name.'_general_section',
+			$args
+		);
+
 		register_setting(
 			$this->plugin_name.'_general_settings',
 			$this->plugin_name.'_api_key'
 		);
+		register_setting(
+			$this->plugin_name.'_general_settings',
+			$this->plugin_name.'_calendar_id'
+		);
+
 	}
 
 	/**
@@ -187,6 +211,7 @@ class Teamup_Admin {
 	 */
 	public static function uninstall() {
 		delete_option('teamup_api_key');
+		delete_option('teamup_calendar_id');
 	}
 
 	/**

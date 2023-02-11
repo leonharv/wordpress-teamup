@@ -45,7 +45,23 @@ class Teamup_Shortcode {
 	 */
 	private $version;
 
+	/**
+	 * The key for the API access.
+	 * 
+	 * @since	1.0.0
+	 * @access	private
+	 * @var		string		$api_key	The key for the API access.
+	 */
 	private $api_key;
+
+	/**
+	 * The ID of the used calendar
+	 * 
+	 * @since	1.0.3
+	 * @access	private
+	 * @var	string			$calendar_id	The ID of the used calendar.
+	 */
+	private $calendar_id;
 
 	/**
 	 * Initialize the class and set its properties.
@@ -54,12 +70,12 @@ class Teamup_Shortcode {
 	 * @param      string    $plugin_name       The name of this plugin.
 	 * @param      string    $version    The version of this plugin.
 	 */
-	public function __construct( $plugin_name, $version, $api_key ) {
+	public function __construct( $plugin_name, $version, $api_key, $calendar_id ) {
 
 		$this->plugin_name = $plugin_name;
 		$this->version = $version;
 		$this->api_key = $api_key;
-
+		$this->calendar_id = $calendar_id;
 	}
 
 	/**
@@ -92,11 +108,56 @@ class Teamup_Shortcode {
 	 * This function is called to process the shortcode.
 	 * 
 	 * @since 1.0.0
-	 * @param array $atts The attributes of the shortcode call.
+	 * @param array $attrs The attributes of the shortcode call.
 	 * @param string $content The content. if existent inside the shortcode.
 	 * @return string The generated table.
 	 */
-    public function callback($atts, $content = null) {
+    public function callback($attrs, $content = null) {
+
+		if(array_key_exists('event', $attrs)) {
+			return $this->render_event_header($attrs['event']);
+		}
+			
+		return $this->render_calendar();
+    }
+
+	/**
+	 * Render one event.
+	 * 
+	 * @since 1.0.3
+	 * @param $event_id string|int The event_id to render.
+	 * @return string The generated view of an event.
+	 */
+	private function render_event_header($event_id) {
+		$id_array = explode('-', $event_id);
+
+		$event = $this->get_event($id_array[0]);
+		if(sizeof($event) < 1) {
+			return '';
+		}
+
+		$event = $event[0];
+
+		$start = date_create($event->start_time);
+		$end = date_create($event->end_time);
+		$days = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+
+		$output = '<p><strong>TRAININGSZEIT:</strong></p>';
+		$output .= '<p><time>'. $days[$start->format('N')-1] .': '. $start->format('G:i') .' - '. $end->format('G:i') .' Uhr</time></p>';
+		$output .= '<p><strong>TRAININGSORT:</strong></p>';
+		$output .= '<p>'. htmlentities($event->location) .'</p>';
+		$output .= '<p><strong>ÜBUNGSLEITENDE:</strong></p>';
+		$output .= '<p>'. htmlentities($event->trainer) .'</p>';
+		return $output;
+	}
+
+	/**
+	 * Render the whole calendar as a table.
+	 * 
+	 * @since 1.0.3
+	 * @return string The generated table.
+	 */
+	private function render_calendar() {
 		$events = $this->get_calendar();
 
 		$days = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
@@ -118,10 +179,10 @@ class Teamup_Shortcode {
 		}
 		$output .= '</tbody></table>';
 		return $output;
-    }
+	}
 
 	/**
-	 * Get all recuring events.
+	 * Identifies, if the database needs to be updated. Updates the database.
 	 * 
 	 * This method either gets the data of the database or fetches it from
 	 * Teamup. It identifies if the Monday of this week is the same one
@@ -129,36 +190,60 @@ class Teamup_Shortcode {
 	 * than this week. Otherwise, the database is updated from Teamup and
 	 * the Monday of this week is stored as the least valid date.
 	 * 
-	 * @since 1.0.2
-	 * @return array The list of all recurrent events.
+	 * @since 1.0.3
 	 */
-	private function get_calendar() {
+	private function check_last_fetch() {
 		$last_fetch = get_option('teamup_last_fetch', 0);
 		$last_monday = date_create('Monday this week');
 
 		// If the Monday from this week is not the stored one, we have a new week.
 		if($last_monday != $last_fetch) {
-			$events = $this->fetch_recuring_events();
-			$calendars = $this->fetch_calendar();
+			$events = $this->fetch_recuring_events($this->calendar_id);
+			// var_dump($events);
+			$calendars = $this->fetch_calendar($this->calendar_id);
 
 			$this->store_events($events, $calendars);
 
 			update_option('teamup_last_fetch', $last_monday);
 		}
+	}
+
+	/**
+	 * Get all recurring events.
+	 * 
+	 * @since 1.0.2
+	 * @return array The list of all recurrent events.
+	 */
+	private function get_calendar() {
+		$this->check_last_fetch();
 
 		return $this->query_calendar();
+	}
+
+	/**
+	 * Get a single event by it event_id.
+	 * 
+	 * @since 1.0.3
+	 * @param $event_id string|int The event_id to look for.
+	 * @return array One event.
+	 */
+	private function get_event($event_id) {
+		$this->check_last_fetch();
+
+		return $this->query_event($event_id);
 	}
 
 	/**
 	 * Fetches all calendars from Teamup.
 	 * 
 	 * @since 1.0.0
+	 * @param string $calendar The ID of the calendar to fetch.
 	 * @return array An associative array, which maps from id to name.
 	 */
-	private function fetch_calendar() {
+	private function fetch_calendar($calendar) {
 		$ch = curl_init();
 	
-		curl_setopt($ch, CURLOPT_URL, "https://api.teamup.com/kssw3hmcj3e2ab46wg/subcalendars");
+		curl_setopt($ch, CURLOPT_URL, "https://api.teamup.com/". $calendar ."/subcalendars");
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 		curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Teamup-Token: '.$this->api_key]);
 	
@@ -178,12 +263,13 @@ class Teamup_Shortcode {
 	 * Fetches all recurrent events from Teamup.
 	 * 
 	 * @since 1.0.0
+	 * @param string $calendar The ID of the calendar to fetch.
 	 * @return array All recurrent events as an stdclass.
 	 */
-	private function fetch_recuring_events() {
+	private function fetch_recuring_events($calendar) {
 		$ch = curl_init();
 	
-		curl_setopt($ch, CURLOPT_URL, "https://api.teamup.com/kssw3hmcj3e2ab46wg/events?startDate=Monday+this+week&endDate=Sunday+this+week");
+		curl_setopt($ch, CURLOPT_URL, "https://api.teamup.com/". $calendar ."/events?startDate=Monday+this+week&endDate=Sunday+this+week");
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 		curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Teamup-Token: '.$this->api_key]);
 	
@@ -219,10 +305,13 @@ class Teamup_Shortcode {
 				$locations[] = $calendars[$subcalendar];
 			}
 
+			$id_array = explode('-', $event->id);
+
 			$contact = $this->get_contact($event);
 			$age = $this->get_age($event);
 
 			$rows[] = array(
+				'event_id' => $id_array[0],
 				'start_time' => $event->start_dt,
 				'end_time' => $event->end_dt,
 				'title' => $event->title,
@@ -244,6 +333,17 @@ class Teamup_Shortcode {
 	 */
 	private function query_calendar() {
 		return Teamup_Database::query_rows();
+	}
+
+	/**
+	 * Query the database for the event by its event_id.
+	 * 
+	 * @since 1.0.3
+	 * @param $event_id string|int The event_id to search for.
+	 * @return array A list of one event.
+	 */
+	private function query_event($event_id) {
+		return Teamup_Database::find_by_event_id($event_id);
 	}
 
 	/**

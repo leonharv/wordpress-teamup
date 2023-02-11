@@ -64,7 +64,7 @@ class Teamup_Database {
 	 * @since 1.0.1
 	 */
     public function check_database() {
-        if ( get_option( 'teamup_db_version', '1.0.0' ) != $this->version ) {
+        if ( get_option( 'teamup_db_version', '1.0.3' ) != $this->version ) {
             self::create_table();
             update_option( 'teamup_db_version', $this->version );
         }
@@ -83,6 +83,7 @@ class Teamup_Database {
 
 		$sql = "CREATE TABLE ".$table_name." (
 			id mediumint(9) NOT NULL AUTO_INCREMENT,
+			event_id int NOT NULL,
 			start_time datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
 			end_time datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
 			title varchar(255) NOT NULL,
@@ -141,7 +142,7 @@ class Teamup_Database {
 
 		foreach($rows as $row) {
 			$row_safe = $wpdb->_escape($row);
-			$wpdb->query('INSERT INTO '.$table_name.' (start_time, end_time, title, location, trainer, contact, age) VALUES ("'.join('", "', $row_safe).'")');
+			$wpdb->query('INSERT INTO '.$table_name.' (event_id, start_time, end_time, title, location, trainer, contact, age) VALUES ("'.join('", "', $row_safe).'")');
 		}
 	}
 
@@ -158,5 +159,22 @@ class Teamup_Database {
 		$results = $wpdb->get_results('SELECT * FROM '.$table_name);
 
 		return $results;
+	}
+
+	/**
+	 * Find an event by its event_id.
+	 * 
+	 * @since 1.0.3
+	 * @param $event_id string|int The event_id to search for.
+	 * @return array A list of one row.
+	 */
+	public static function find_by_event_id($event_id) {
+		global $wpdb;
+		$table_name = $wpdb->prefix . 'teamup';
+
+		$save_event_id = (int) $event_id;
+		$result = $wpdb->get_results('SELECT * FROM '.$table_name.' WHERE event_id LIKE "'.$save_event_id.'%"');
+
+		return $result;
 	}
 }

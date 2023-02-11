@@ -159,7 +159,8 @@ class Teamup {
     private function define_shortcode_hooks() {
 
 		$key = get_option($this->plugin_name.'_api_key', '');
-        $plugin_shortcode = new Teamup_Shortcode( $this->get_plugin_name(), $this->get_version(), $key );
+		$calendar_id = get_option($this->plugin_name.'_calendar_id', '');
+        $plugin_shortcode = new Teamup_Shortcode( $this->get_plugin_name(), $this->get_version(), $key, $calendar_id );
 
         add_shortcode('teamup', array($plugin_shortcode, 'callback') );
     }
