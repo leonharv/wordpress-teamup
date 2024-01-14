@@ -156,7 +156,7 @@ class Teamup_Database {
 		global $wpdb;
 		$table_name = $wpdb->prefix . 'teamup';
 
-		$results = $wpdb->get_results('SELECT * FROM '.$table_name);
+		$results = $wpdb->get_results('SELECT * FROM '.$table_name.' ORDER BY start_time');
 
 		return $results;
 	}
@@ -176,5 +176,21 @@ class Teamup_Database {
 		$result = $wpdb->get_results('SELECT * FROM '.$table_name.' WHERE event_id LIKE "'.$save_event_id.'%"');
 
 		return $result;
+	}
+
+	/**
+	 * Find all events associated with the given age.
+	 * 
+	 * @since 1.0.4
+	 * @param $age string The age to look for.
+	 * @return array A list of all rows containing the age.
+	 */
+	public static function find_by_age($age) {
+		global $wpdb;
+		$table_name = $wpdb->prefix . 'teamup';
+
+		$results = $wpdb->get_results('SELECT * FROM '.$table_name.' WHERE age LIKE "%'.$wpdb->_escape($age).'%" ORDER BY start_time');
+
+		return $results;
 	}
 }

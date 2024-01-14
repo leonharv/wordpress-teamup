@@ -88,7 +88,7 @@ class Teamup_Shortcode {
 	 */
 	private function get_contact($event) {
 		$filtering = ['kinder', 'jugend', 'erwachsene', 'senioren'];
-		return preg_replace('/('.join('|', $filtering).')\s+/i', '', strip_tags($event->notes));
+		return preg_replace('/angebot=\[([('.join('|', $filtering).')[,\s*]+)\]/i', '', strip_tags($event->notes));
 	}
 
 	/**
@@ -100,8 +100,14 @@ class Teamup_Shortcode {
 	 */
 	private function get_age($event) {
 		$filtering = ['kinder', 'jugend', 'erwachsene', 'senioren'];
-		preg_match('/('.join('|', $filtering).')\s+/i', strip_tags($event->notes), $match);
-		return $match[0];
+		$matchingString = '/angebot=\[([('.join('|', $filtering).')[,\s*]+)\]/i';
+		preg_match($matchingString, strip_tags($event->notes), $match);
+
+		if(sizeof($match) < 2) {
+			return '';
+		}
+		
+		return $match[1];
 	}
 
 	/**
@@ -113,12 +119,19 @@ class Teamup_Shortcode {
 	 * @return string The generated table.
 	 */
     public function callback($attrs, $content = null) {
+		$this->check_last_fetch();
+
+		if(!is_array($attrs)) {
+			return $this->render_all_calendar();
+		}
 
 		if(array_key_exists('event', $attrs)) {
 			return $this->render_event_header($attrs['event']);
+		} elseif(array_key_exists('angebot', $attrs)) {
+			return $this->render_category($attrs['angebot']);
 		}
 			
-		return $this->render_calendar();
+		return $this->render_all_calendar();
     }
 
 	/**
@@ -152,13 +165,62 @@ class Teamup_Shortcode {
 	}
 
 	/**
-	 * Render the whole calendar as a table.
+	 * Render only one category.
+	 * 
+	 * @since 1.0.4
+	 * @param $category string A list of categories separated by comma.
+	 * @return string The rendered table.
+	 */
+	private function render_category($category) {
+		$categories = explode(',', $category);
+		$rows = [];
+		foreach($categories as $cat) {
+			$single_category = trim($cat);
+
+			$rows = array_merge($rows, $this->query_by_category($single_category));
+		}
+
+		usort($rows, array($this, 'compare_start'));
+
+		return $this->render_calendar($rows);
+	}
+
+	/**
+	 * Helper function to compare each row by its start.
+	 * 
+	 * @since 1.0.4
+	 * @param $a std_object An event to compare.
+	 * @param $b std_object An event to compare.
+	 * @return int Zero, if equal otherwise -1 if $a < $b else 1.
+	 */
+	private function compare_start($a, $b) {
+		if($a->start_time == $b->start_time) {
+			return 0;
+		}
+
+		return date_create($a->start_time) < date_create($b->start_time) ? -1 : 1;
+	}
+
+	/**
+	 * Render the whole calendar.
 	 * 
 	 * @since 1.0.3
 	 * @return string The generated table.
 	 */
-	private function render_calendar() {
+	private function render_all_calendar() {
 		$events = $this->get_calendar();
+
+		return $this->render_calendar($events);
+	}
+
+	/**
+	 * Render the calendar as a table.
+	 * 
+	 * @since 1.0.4
+	 * @param $events array The list of events to render.
+	 * @return string The generated table.
+	 */
+	private function render_calendar($events) {
 
 		$days = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 
@@ -344,6 +406,17 @@ class Teamup_Shortcode {
 	 */
 	private function query_event($event_id) {
 		return Teamup_Database::find_by_event_id($event_id);
+	}
+
+	/**
+	 * Query the database for all events with the category
+	 * 
+	 * @since 1.0.4
+	 * @param $category string The category name.
+	 * @return array A list of all events.
+	 */
+	private function query_by_category($category) {
+		return Teamup_Database::find_by_age($category);
 	}
 
 	/**
