@@ -100,25 +100,48 @@ class Teamup_Shortcode {
 	private static $target_groups = ['kinder', 'jugend', 'erwachsene', 'senioren'];
 
 	/**
-	 * Remove all technical markers from the event's description. In
-	 * addition, all html tags are removed.
+	 * Remove all technical markers like `Angebot=[...]` and
+	 * `Temperatur=[...]` from a text and strip all html tags.
+	 *
+	 * The markers are removed before and after stripping the html tags, so
+	 * markers which are interrupted by html (e.g. `<b>Angebot</b>=[...]`) are
+	 * caught as well. A marker without a closing bracket removes the rest of
+	 * its line. Block level tags are turned into line breaks first, so
+	 * neighbouring paragraphs are not glued together.
+	 *
+	 * @since 1.1.1
+	 * @param string $text The text to clean.
+	 * @return string The cleaned text without html.
+	 */
+	private function remove_markers($text) {
+		$text = (string) $text;
+		$markers = join('|', self::$technical_markers);
+		$space = '(?:\s|&nbsp;|&#160;)*';
+		$closed = '/\b(' . $markers . ')' . $space . '=' . $space . '\[[^\]]*\]/iu';
+		$open = '/\b(' . $markers . ')' . $space . '=.*$/imu';
+
+		$text = preg_replace($closed, '', $text);
+		$text = preg_replace('#<br\s*/?>|</(p|div|li|h[1-6])>#i', "\n", $text);
+		$text = strip_tags($text);
+		$text = str_replace(['&nbsp;', '&#160;', "\xC2\xA0"], ' ', $text);
+		$text = preg_replace($closed, '', $text);
+		$text = preg_replace($open, '', $text);
+
+		// Collapse the whitespace left behind by the removed markers.
+		$text = preg_replace('/[ \t]*\R\s*/u', "\n", $text);
+
+		return trim($text);
+	}
+
+	/**
+	 * The event's description without technical markers and html tags.
 	 *
 	 * @since 1.1.0
 	 * @param stdclass 	$event 	The event to filter.
 	 * @return string The filtered description.
 	 */
 	private function get_contact($event) {
-		$notes = isset($event->notes) ? $event->notes : '';
-
-		$pattern = '/(' . join('|', self::$technical_markers) . ')\s*=\s*\[[^\]]*\]/i';
-		$notes = preg_replace($pattern, '', $notes);
-
-		$notes = strip_tags($notes);
-
-		// Collapse the whitespace left behind by the removed markers.
-		$notes = preg_replace('/\s*\R\s*/u', "\n", $notes);
-
-		return trim($notes);
+		return $this->remove_markers(isset($event->notes) ? $event->notes : '');
 	}
 
 	/**
@@ -291,13 +314,18 @@ class Teamup_Shortcode {
 	}
 
 	/**
-	 * Render the whole calendar.
+	 * Render the whole calendar. Events without a target group are left out.
 	 * 
 	 * @since 1.0.3
 	 * @return string The generated table.
 	 */
 	private function render_all_calendar() {
 		$events = $this->get_calendar();
+
+		// Events without a target group (e.g. cleaning of the hall) are internal.
+		$events = array_values(array_filter($events, function($event) {
+			return trim((string) $event->target_group) !== '';
+		}));
 
 		return $this->render_calendar($events);
 	}
@@ -466,9 +494,9 @@ class Teamup_Shortcode {
 				'event_id' => $id_array[0],
 				'start_time' => $event->start_dt,
 				'end_time' => $event->end_dt,
-				'title' => $event->title,
+				'title' => $this->remove_markers($event->title),
 				'location' => join(', ', $locations),
-				'trainer' => $event->who,
+				'trainer' => $this->remove_markers($event->who),
 				'contact' => $contact,
 				'target_group' => $target_group
 			);
