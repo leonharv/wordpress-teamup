@@ -79,35 +79,131 @@ class Teamup_Shortcode {
 	}
 
 	/**
-	 * Filter out the age of the event's description. In addition, all 
-	 * html tags are removed.
-	 * 
-	 * @since 1.0.0
+	 * The technical markers, which are maintained inside the event's
+	 * description but must never be shown on the website.
+	 *
+	 * `Angebot=[...]` is the legacy mechanism, which has been replaced by
+	 * the structured Teamup field `Zielgruppe`. `Temperatur=[...]` is used
+	 * for the heating only.
+	 *
+	 * @since 1.1.0
+	 * @var string[]
+	 */
+	private static $technical_markers = ['angebot', 'temperatur'];
+
+	/**
+	 * The known target groups.
+	 *
+	 * @since 1.1.0
+	 * @var string[]
+	 */
+	private static $target_groups = ['kinder', 'jugend', 'erwachsene', 'senioren'];
+
+	/**
+	 * Remove all technical markers like `Angebot=[...]` and
+	 * `Temperatur=[...]` from a text and strip all html tags.
+	 *
+	 * The markers are removed before and after stripping the html tags, so
+	 * markers which are interrupted by html (e.g. `<b>Angebot</b>=[...]`) are
+	 * caught as well. A marker without a closing bracket removes the rest of
+	 * its line. Block level tags are turned into line breaks first, so
+	 * neighbouring paragraphs are not glued together.
+	 *
+	 * @since 1.1.1
+	 * @param string $text The text to clean.
+	 * @return string The cleaned text without html.
+	 */
+	private function remove_markers($text) {
+		$text = (string) $text;
+		$markers = join('|', self::$technical_markers);
+		$space = '(?:\s|&nbsp;|&#160;)*';
+		$closed = '/\b(' . $markers . ')' . $space . '=' . $space . '\[[^\]]*\]/iu';
+		$open = '/\b(' . $markers . ')' . $space . '=.*$/imu';
+
+		$text = preg_replace($closed, '', $text);
+		$text = preg_replace('#<br\s*/?>|</(p|div|li|h[1-6])>#i', "\n", $text);
+		$text = strip_tags($text);
+		$text = str_replace(['&nbsp;', '&#160;', "\xC2\xA0"], ' ', $text);
+		$text = preg_replace($closed, '', $text);
+		$text = preg_replace($open, '', $text);
+
+		// Collapse the whitespace left behind by the removed markers.
+		$text = preg_replace('/[ \t]*\R\s*/u', "\n", $text);
+
+		return trim($text);
+	}
+
+	/**
+	 * The event's description without technical markers and html tags.
+	 *
+	 * @since 1.1.0
 	 * @param stdclass 	$event 	The event to filter.
 	 * @return string The filtered description.
 	 */
 	private function get_contact($event) {
-		$filtering = ['kinder', 'jugend', 'erwachsene', 'senioren'];
-		return preg_replace('/angebot=\[([('.join('|', $filtering).')[,\s*]+)\]/i', '', strip_tags($event->notes));
+		return $this->remove_markers(isset($event->notes) ? $event->notes : '');
 	}
 
 	/**
-	 * Identify the age from the event's description.
-	 * 
-	 * @since 1.0.0
-	 * @param stdclass	$event	The event to identify the age.
-	 * @return string The identified age name.
+	 * Read the target group from the structured Teamup field `Zielgruppe`.
+	 *
+	 * The Teamup API delivers custom fields inside the `custom` object. The
+	 * field `Zielgruppe` is a multiple choice field, therefore its value is
+	 * an array of lower case strings. A single choice or text field would
+	 * deliver a plain string, which is handled as well.
+	 *
+	 * @since 1.1.0
+	 * @param stdclass	$event	The event to read the target group from.
+	 * @return string A comma separated list of target groups.
 	 */
-	private function get_age($event) {
-		$filtering = ['kinder', 'jugend', 'erwachsene', 'senioren'];
-		$matchingString = '/angebot=\[([('.join('|', $filtering).')[,\s*]+)\]/i';
-		preg_match($matchingString, strip_tags($event->notes), $match);
-
-		if(sizeof($match) < 2) {
+	private function get_target_group($event) {
+		if(!isset($event->custom)) {
 			return '';
 		}
-		
-		return $match[1];
+
+		$custom = (array) $event->custom;
+		$value = null;
+		foreach($custom as $field => $field_value) {
+			if(strtolower($field) === 'zielgruppe') {
+				$value = $field_value;
+				break;
+			}
+		}
+
+		if($value === null) {
+			return '';
+		}
+
+		// A formatted text field is delivered as an object containing html.
+		if(is_object($value)) {
+			$value = isset($value->html) ? $value->html : '';
+		}
+
+		$groups = [];
+		foreach((array) $value as $entry) {
+			$entry = strtolower(trim(strip_tags((string) $entry)));
+			if($entry !== '') {
+				$groups[] = $entry;
+			}
+		}
+
+		return join(', ', array_unique($groups));
+	}
+
+	/**
+	 * Render a target group for the public table.
+	 *
+	 * @since 1.1.0
+	 * @param string	$target_group	The stored target group.
+	 * @return string The human readable target group.
+	 */
+	private function render_target_group($target_group) {
+		$groups = array_filter(array_map('trim', explode(',', (string) $target_group)));
+		$groups = array_map(function($group) {
+			return function_exists('mb_convert_case') ? mb_convert_case($group, MB_CASE_TITLE, 'UTF-8') : ucfirst($group);
+		}, $groups);
+
+		return join(', ', $groups);
 	}
 
 	/**
@@ -119,7 +215,6 @@ class Teamup_Shortcode {
 	 * @return string The generated table.
 	 */
     public function callback($attrs, $content = null) {
-		$this->check_last_fetch();
 
 		if(!is_array($attrs)) {
 			return $this->render_all_calendar();
@@ -127,8 +222,11 @@ class Teamup_Shortcode {
 
 		if(array_key_exists('event', $attrs)) {
 			return $this->render_event_header($attrs['event']);
+		} elseif(array_key_exists('zielgruppe', $attrs)) {
+			return $this->render_target_groups($attrs['zielgruppe']);
 		} elseif(array_key_exists('angebot', $attrs)) {
-			return $this->render_category($attrs['angebot']);
+			// Legacy attribute, kept so existing pages keep working.
+			return $this->render_target_groups($attrs['angebot']);
 		}
 			
 		return $this->render_all_calendar();
@@ -165,19 +263,33 @@ class Teamup_Shortcode {
 	}
 
 	/**
-	 * Render only one category.
+	 * Render only the events of the given target groups.
 	 * 
-	 * @since 1.0.4
-	 * @param $category string A list of categories separated by comma.
+	 * @since 1.1.0
+	 * @param $target_group string A list of target groups separated by comma.
 	 * @return string The rendered table.
 	 */
-	private function render_category($category) {
-		$categories = explode(',', $category);
-		$rows = [];
-		foreach($categories as $cat) {
-			$single_category = trim($cat);
+	private function render_target_groups($target_group) {
+		$this->check_last_fetch();
 
-			$rows = array_merge($rows, $this->query_by_category($single_category));
+		$target_groups = explode(',', $target_group);
+		$rows = [];
+		$seen = [];
+		foreach($target_groups as $group) {
+			$single_group = strtolower(trim($group));
+			if($single_group === '') {
+				continue;
+			}
+
+			// An event can belong to several target groups, so skip duplicates.
+			foreach($this->query_by_target_group($single_group) as $row) {
+				if(in_array($row->id, $seen)) {
+					continue;
+				}
+
+				$seen[] = $row->id;
+				$rows[] = $row;
+			}
 		}
 
 		usort($rows, array($this, 'compare_start'));
@@ -202,13 +314,18 @@ class Teamup_Shortcode {
 	}
 
 	/**
-	 * Render the whole calendar.
+	 * Render the whole calendar. Events without a target group are left out.
 	 * 
 	 * @since 1.0.3
 	 * @return string The generated table.
 	 */
 	private function render_all_calendar() {
 		$events = $this->get_calendar();
+
+		// Events without a target group (e.g. cleaning of the hall) are internal.
+		$events = array_values(array_filter($events, function($event) {
+			return trim((string) $event->target_group) !== '';
+		}));
 
 		return $this->render_calendar($events);
 	}
@@ -227,17 +344,18 @@ class Teamup_Shortcode {
 		$output = '<table class="exercises">
 			<thead>
 				<th style="width: 10%;">WOCHENTAG</th>
-				<th style="width: 12%;">UHRZEIT</th>
-				<th style="width: 25%;">ANGEBOT</th>
-				<th style="width: 15%;">ORT</th>
-				<th style="width: 20%;">ÜBUNGSLEITER</th>
-				<th style="width: 16%;">KONTAKT</th>
+				<th style="width: 11%;">UHRZEIT</th>
+				<th style="width: 22%;">ANGEBOT</th>
+				<th style="width: 12%;">ZIELGRUPPE</th>
+				<th style="width: 13%;">ORT</th>
+				<th style="width: 17%;">ÜBUNGSLEITER</th>
+				<th style="width: 15%;">KONTAKT</th>
 			</thead>
 		<tbody>';
 		foreach($events as $event) {
 			$start = date_create($event->start_time);
 			$end = date_create($event->end_time);
-			$output .= '<tr><td>'.$days[$start->format('N')-1].'</td><td>'.$start->format('G:i').' - '.$end->format('G:i').' Uhr</td><td>'.strip_tags($event->title).'</td><td>'.strip_tags($event->location).'</td><td>'.strip_tags($event->trainer).'</td><td>'.strip_tags($event->contact).'</td></tr>';
+			$output .= '<tr><td>'.$days[$start->format('N')-1].'</td><td>'.$start->format('G:i').' - '.$end->format('G:i').' Uhr</td><td>'.strip_tags($event->title).'</td><td>'.$this->render_target_group($event->target_group).'</td><td>'.strip_tags($event->location).'</td><td>'.strip_tags($event->trainer).'</td><td>'.strip_tags($event->contact).'</td></tr>';
 		}
 		$output .= '</tbody></table>';
 		return $output;
@@ -370,17 +488,17 @@ class Teamup_Shortcode {
 			$id_array = explode('-', $event->id);
 
 			$contact = $this->get_contact($event);
-			$age = $this->get_age($event);
+			$target_group = $this->get_target_group($event);
 
 			$rows[] = array(
 				'event_id' => $id_array[0],
 				'start_time' => $event->start_dt,
 				'end_time' => $event->end_dt,
-				'title' => $event->title,
+				'title' => $this->remove_markers($event->title),
 				'location' => join(', ', $locations),
-				'trainer' => $event->who,
+				'trainer' => $this->remove_markers($event->who),
 				'contact' => $contact,
-				'age' => $age
+				'target_group' => $target_group
 			);
 		}
 
@@ -409,14 +527,14 @@ class Teamup_Shortcode {
 	}
 
 	/**
-	 * Query the database for all events with the category
+	 * Query the database for all events of the given target group.
 	 * 
-	 * @since 1.0.4
-	 * @param $category string The category name.
+	 * @since 1.1.0
+	 * @param $target_group string The target group name.
 	 * @return array A list of all events.
 	 */
-	private function query_by_category($category) {
-		return Teamup_Database::find_by_age($category);
+	private function query_by_target_group($target_group) {
+		return Teamup_Database::find_by_target_group($target_group);
 	}
 
 	/**

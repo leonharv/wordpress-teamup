@@ -65,7 +65,16 @@ class Teamup_Database {
 	 */
     public function check_database() {
         if ( get_option( 'teamup_db_version', '1.0.3' ) != $this->version ) {
+            /*
+             * The table is only a cache of the Teamup calendar, so it is
+             * rebuilt from scratch. This also applies column renames, which
+             * dbDelta is not able to do. Dropping `teamup_last_fetch` forces
+             * a fresh fetch from Teamup on the next request.
+             */
+            self::delete_table();
             self::create_table();
+            delete_option( 'teamup_last_fetch' );
+
             update_option( 'teamup_db_version', $this->version );
         }
     }
@@ -90,7 +99,7 @@ class Teamup_Database {
 			location varchar(255) NOT NULL,
 			trainer varchar(255) NOT NULL,
 			contact text NOT NULL,
-			age varchar(255) NOT NULL,
+			target_group varchar(255) NOT NULL,
 			PRIMARY KEY id (id)
 		) $charset_collate;";
 
@@ -142,7 +151,7 @@ class Teamup_Database {
 
 		foreach($rows as $row) {
 			$row_safe = $wpdb->_escape($row);
-			$wpdb->query('INSERT INTO '.$table_name.' (event_id, start_time, end_time, title, location, trainer, contact, age) VALUES ("'.join('", "', $row_safe).'")');
+			$wpdb->query('INSERT INTO '.$table_name.' (event_id, start_time, end_time, title, location, trainer, contact, target_group) VALUES ("'.join('", "', $row_safe).'")');
 		}
 	}
 
@@ -179,17 +188,24 @@ class Teamup_Database {
 	}
 
 	/**
-	 * Find all events associated with the given age.
+	 * Find all events associated with the given target group.
 	 * 
-	 * @since 1.0.4
-	 * @param $age string The age to look for.
-	 * @return array A list of all rows containing the age.
+	 * The target group is read from the structured Teamup field
+	 * `Zielgruppe`. An event can belong to several target groups, which are
+	 * stored as a comma separated list.
+	 * 
+	 * @since 1.1.0
+	 * @param $target_group string The target group to look for.
+	 * @return array A list of all rows containing the target group.
 	 */
-	public static function find_by_age($age) {
+	public static function find_by_target_group($target_group) {
 		global $wpdb;
 		$table_name = $wpdb->prefix . 'teamup';
 
-		$results = $wpdb->get_results('SELECT * FROM '.$table_name.' WHERE age LIKE "%'.$wpdb->_escape($age).'%" ORDER BY start_time');
+		$results = $wpdb->get_results($wpdb->prepare(
+			'SELECT * FROM '.$table_name.' WHERE target_group LIKE %s ORDER BY start_time',
+			'%' . $wpdb->esc_like(strtolower(trim($target_group))) . '%'
+		));
 
 		return $results;
 	}
